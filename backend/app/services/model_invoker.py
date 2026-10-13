@@ -1,7 +1,6 @@
 from typing import Any
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage
+from langchain_core.runnables import Runnable
 
 from app.services.quota_guard import (
     DailyQuotaExhaustedError,
@@ -10,11 +9,11 @@ from app.services.quota_guard import (
 )
 
 
-async def invoke_chat_model(
-    model: BaseChatModel,
+async def invoke_chat_model[OutputT](
+    model: Runnable[Any, OutputT],
     model_input: Any,
     **kwargs: Any,
-) -> BaseMessage:
+) -> OutputT:
     """Invoke Gemini with DeepBrief's daily free-quota circuit breaker."""
 
     gemini_quota_guard.raise_if_disabled()

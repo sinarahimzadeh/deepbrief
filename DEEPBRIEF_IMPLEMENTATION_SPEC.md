@@ -590,9 +590,7 @@ Create one model factory. Application code outside the factory should depend on 
 Representative interface:
 
 ```python
-def create_chat_model(
-    temperature: float = 0,
-):
+def create_chat_model():
     ...
 ```
 

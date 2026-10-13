@@ -38,7 +38,7 @@ def test_factory_builds_fixed_gemini_model(
 
     assert result is not None
     assert captured["model"] == "gemini-test-lite"
-    assert captured["temperature"] == 0
+    assert "temperature" not in captured
     assert captured["request_timeout"] == 45
     assert captured["retries"] == 2
     assert captured["api_key"] == "google-secret"

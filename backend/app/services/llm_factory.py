@@ -16,7 +16,6 @@ def _secret_value(settings: Settings) -> str:
 
 
 def create_chat_model(
-    temperature: float = 0,
     *,
     settings: Settings | None = None,
 ) -> BaseChatModel:
@@ -28,7 +27,6 @@ def create_chat_model(
     return ChatGoogleGenerativeAI(
         api_key=api_key,
         model=app_settings.gemini_model,
-        temperature=temperature,
         request_timeout=app_settings.llm_timeout_seconds,
         retries=app_settings.llm_max_retries,
     )

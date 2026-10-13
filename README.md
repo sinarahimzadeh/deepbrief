@@ -14,13 +14,17 @@ The implementation scope and engineering plan are documented in [DEEPBRIEF_IMPLE
 
 ## Current milestone
 
-The Gemini configuration slice is working:
+The first real supervisor slice is working:
 
 - `GET /api/v1/health` is available from FastAPI.
 - `GET /api/v1/config/models` exposes the fixed Gemini model and quota status without secrets.
+- `POST /api/v1/research` accepts and validates a research question.
+- `GET /api/v1/research/{id}` returns job progress and the completed plan.
 - One LangChain factory creates Gemini 3.5 Flash-Lite chat models.
 - A quota guard pauses model calls after Google reports the daily free limit.
-- The Next.js home page presents the research question and source controls without exposing backend setup details.
+- The Gemini supervisor produces exactly three validated, non-overlapping research assignments.
+- The Next.js form submits a real job and displays the three-track supervisor plan.
+- Jobs are temporarily stored in memory until PostgreSQL is added.
 - Backend tests and linting pass.
 - The frontend production build passes.
 

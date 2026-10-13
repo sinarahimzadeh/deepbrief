@@ -45,7 +45,7 @@ export default function Home() {
               Multi-agent research workspace
             </p>
             <h1 className="text-5xl font-semibold leading-[1.03] tracking-[-0.05em] text-slate-950 sm:text-6xl lg:text-7xl">
-              Ask a hard question. Get an answer you can verify.
+              Multi-agent research with verifiable sources.
             </h1>
             <p className="mt-7 max-w-xl text-lg leading-8 text-slate-600">
               DeepBrief plans the investigation, sends three researchers in
