@@ -12,7 +12,7 @@ The receiving Codex agent should treat this document as the primary product and 
 
 DeepBrief accepts a research question, divides it into independent subtopics, assigns those subtopics to parallel AI research agents, gathers web evidence, and produces a structured research report with verifiable citations.
 
-The user can choose either OpenAI or Google Gemini for a research run. LangChain provides a common model interface, while LangGraph coordinates the multi-agent workflow.
+DeepBrief uses Google Gemini 3.5 Flash-Lite for every research run. LangChain provides the model interface, while LangGraph coordinates the multi-agent workflow. There is no OpenAI integration or paid-model fallback in the MVP.
 
 Example question:
 
@@ -21,7 +21,7 @@ Example question:
 Expected user experience:
 
 1. The user enters a question.
-2. The user selects OpenAI or Gemini.
+2. The backend confirms that Gemini Flash-Lite is configured and its free quota is available.
 3. The supervisor creates three independent research assignments.
 4. Three researcher agents execute their assignments in parallel.
 5. The writer agent combines the findings into a report.
@@ -38,7 +38,7 @@ The MVP must demonstrate the following hiring signals:
 
 - Python backend development with FastAPI.
 - A usable React interface built with Next.js.
-- Runtime switching between OpenAI and Gemini.
+- A cost-safe Gemini Flash-Lite integration with a daily free-quota circuit breaker.
 - LangChain model and tool integrations.
 - A controlled multi-agent workflow implemented with LangGraph.
 - Parallel task delegation and result aggregation.
@@ -86,10 +86,10 @@ If a feature is not required for the central research flow, leave it for a futur
 The home page contains:
 
 - A large research-question text area.
-- A provider selector: `OpenAI` or `Google Gemini`.
-- A model selector populated from backend configuration or a small allowlist.
 - A maximum-source selector, defaulting to 12.
 - A `Start Research` button.
+
+Provider names, model names, API-key state, and backend setup instructions must not appear on the public home page. If a run cannot start, show a short user-facing message without exposing infrastructure details.
 
 After submission, the frontend receives a research-job ID and navigates to `/research/{id}`.
 
@@ -141,7 +141,7 @@ When the job completes, the same page displays:
 - Inline citation markers such as `[S1]` and `[S4]`.
 - A source panel containing title, URL, domain, retrieval date, and supporting snippet.
 - Verification summary: supported, weakly supported, or unsupported claims.
-- Provider/model used.
+- Model used.
 - Total duration.
 - Input and output token counts when available.
 - Estimated cost only if a dated, configured pricing table exists; otherwise omit cost rather than guessing.
@@ -151,7 +151,7 @@ When the job completes, the same page displays:
 The history page lists previous jobs with:
 
 - Question.
-- Provider/model.
+- Model.
 - Status.
 - Creation time.
 - Duration.
@@ -185,8 +185,8 @@ FastAPI backend
   |       +--> Maximum one repair pass
   |
   +--> LangChain model factory
-  |       +--> OpenAI integration
-  |       +--> Google Gemini integration
+  |       +--> Google Gemini 3.5 Flash-Lite integration
+  |       +--> Daily free-quota circuit breaker
   |
   +--> Web search provider
   |
@@ -202,12 +202,12 @@ PostgreSQL + pgvector
 
 - **Next.js** owns user interaction and presentation.
 - **FastAPI** owns validation, persistence, job control, and public API contracts.
-- **LangChain** normalizes model calls, tools, structured output, and provider integrations.
+- **LangChain** normalizes Gemini model calls, tools, and structured output.
 - **LangGraph** owns agent state, routing, parallel fan-out, aggregation, and bounded retries.
 - **PostgreSQL** persists jobs, sources, reports, agent states, and usage information.
 - **pgvector** supports semantic retrieval over collected source chunks.
 
-The frontend must never call OpenAI, Gemini, or the search provider directly. API keys remain on the backend.
+The frontend must never call Gemini or the search provider directly. API keys remain on the backend.
 
 ---
 
@@ -226,7 +226,6 @@ The frontend must never call OpenAI, Gemini, or the search provider directly. AP
 - `asyncpg` PostgreSQL driver.
 - LangChain.
 - LangGraph.
-- `langchain-openai`.
 - `langchain-google-genai`.
 - A single web-search provider, preferably Tavily for the MVP.
 - `httpx` for HTTP calls.
@@ -236,7 +235,7 @@ The frontend must never call OpenAI, Gemini, or the search provider directly. AP
 
 ### Embeddings
 
-Use a single provider-neutral local embedding model for the MVP so that chat-model switching does not require rebuilding the vector index.
+Use a local embedding model for the MVP so embeddings remain independent of Gemini and do not consume its request quota.
 
 Recommended default:
 
@@ -422,7 +421,7 @@ The graph must always terminate. Enforce:
 - Maximum five accepted sources per researcher.
 - Maximum one verification repair cycle.
 - Overall job timeout, default 300 seconds.
-- Provider retry limit, default two attempts per model call.
+- Gemini retry limit, default two attempts per model call.
 
 ### 8.3 Shared graph state
 
@@ -432,7 +431,7 @@ Use a typed state definition. A representative shape is:
 class ResearchGraphState(TypedDict):
     job_id: str
     question: str
-    provider: str
+    provider: Literal["google_genai"]
     model: str
     max_sources: int
     research_plan: list[ResearchAssignment]
@@ -584,40 +583,41 @@ After the second verification, finalize the report even if warnings remain. Disp
 
 ---
 
-## 9. Model Provider Abstraction
+## 9. Gemini Model Integration
 
-Create one model factory. Application code outside the factory should depend on LangChain's common chat-model interface, not provider SDK types.
+Create one model factory. Application code outside the factory should depend on LangChain's common chat-model interface, not Google SDK types.
 
 Representative interface:
 
 ```python
 def create_chat_model(
-    provider: Literal["openai", "google_genai"],
-    model_name: str,
     temperature: float = 0,
 ):
     ...
 ```
 
-Provider packages:
+Model package:
 
-- OpenAI: `langchain-openai`.
 - Gemini: `langchain-google-genai`.
 
 Requirements:
 
-- Validate provider and model against a configured allowlist.
-- Read API keys from environment variables only.
+- Pin the model to `gemini-3.5-flash-lite` in backend configuration.
+- Read `GOOGLE_API_KEY` from environment variables only.
 - Support async invocation.
 - Support structured output.
-- Support tool calling if the selected model supports it.
+- Support tool calling where needed.
 - Capture usage metadata where available.
 - Set timeouts and bounded retries.
-- Return a clear configuration error when the selected provider key is missing.
+- Return a clear configuration error when the Gemini key is missing.
+- Route every model call through the quota-aware invocation service.
+- When Google returns a daily free-quota error, reject further model calls until the next midnight-Pacific reset.
+- Do not treat a temporary per-minute rate limit as daily exhaustion.
+- Do not fall back to another model or paid provider.
 
-Do not assume both providers behave identically. Add provider-contract tests with mocked responses and at least one optional live smoke test per configured provider.
+Add mocked factory and quota-guard tests plus one optional live smoke test when a Gemini key is configured. Automated tests must not require a real key.
 
-One provider/model is selected for an entire research run. Do not use a different provider for each agent in the MVP.
+Every agent in a run uses the same fixed Gemini model.
 
 ---
 
@@ -777,22 +777,17 @@ Optionally include a separate readiness endpoint that checks database connectivi
 
 ### `GET /api/v1/config/models`
 
-Returns the configured, public model allowlist without exposing secrets.
+Returns the fixed Gemini model and current quota availability without exposing secrets.
 
 ```json
 {
-  "providers": [
-    {
-      "id": "openai",
-      "label": "OpenAI",
-      "models": ["configured-openai-model"]
-    },
-    {
-      "id": "google_genai",
-      "label": "Google Gemini",
-      "models": ["configured-gemini-model"]
-    }
-  ]
+  "provider": "google_genai",
+  "label": "Google Gemini",
+  "model": "gemini-3.5-flash-lite",
+  "configured": true,
+  "available": true,
+  "disabled_reason": null,
+  "disabled_until": null
 }
 ```
 
@@ -803,8 +798,6 @@ Request:
 ```json
 {
   "question": "Compare OpenAI and Gemini for enterprise customer support.",
-  "provider": "google_genai",
-  "model": "configured-gemini-model",
   "max_sources": 12
 }
 ```
@@ -812,9 +805,8 @@ Request:
 Validation:
 
 - Question length: 10-2,000 characters.
-- Provider: allowlisted enum.
-- Model: must belong to provider allowlist.
 - `max_sources`: 3-15 for the MVP.
+- Reject the run if Gemini is not configured or is paused by the daily quota guard.
 
 Response: HTTP 202.
 
@@ -938,17 +930,16 @@ Components:
 
 - Product name and one-sentence description.
 - Research question textarea.
-- Provider select.
-- Model select.
 - Maximum sources select.
 - Start button.
 - Link to history.
 
 Behavior:
 
-- Load provider/model options from the backend.
 - Disable submission while sending.
 - Display validation errors inline.
+- Translate a daily-quota response into a simple "daily research limit reached" message.
+- Never display API-key or backend configuration instructions to the user.
 - On success, navigate to `/research/{id}`.
 
 ### 14.3 Research page `/research/[id]`
@@ -1009,13 +1000,10 @@ API_PREFIX=/api/v1
 
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/deepbrief
 
-OPENAI_API_KEY=
 GOOGLE_API_KEY=
 TAVILY_API_KEY=
 
-DEFAULT_LLM_PROVIDER=google_genai
-OPENAI_MODELS=replace-with-allowed-model-names
-GOOGLE_GENAI_MODELS=replace-with-allowed-model-names
+GEMINI_MODEL=gemini-3.5-flash-lite
 
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 EMBEDDING_DIMENSION=384
@@ -1037,9 +1025,9 @@ MODEL_MAX_RETRIES=2
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 ```
 
-Do not commit real keys. Validate required settings at backend startup and provide useful messages.
+Do not commit real keys. Validate required settings before accepting a research run and provide useful messages.
 
-Model names change over time. The implementing agent should use currently available models configured by the developer, not hardcode model names from examples or old tutorials.
+The MVP is intentionally pinned to `gemini-3.5-flash-lite`. Change that setting only after confirming the replacement model's availability and free-tier behavior in the current Google documentation and AI Studio project dashboard.
 
 ---
 
@@ -1050,7 +1038,8 @@ The MVP must include basic engineering protections:
 - Server-side API keys only.
 - Restricted CORS origin.
 - Input length validation.
-- Provider/model allowlists.
+- A backend-only, fixed Gemini model setting.
+- A daily free-quota circuit breaker with no paid fallback.
 - Search request timeouts.
 - LLM timeouts and bounded retries.
 - Overall research timeout.
@@ -1077,8 +1066,9 @@ Prompt-injection defense for retrieved content:
 
 Required unit-test targets:
 
-- Settings parsing and provider/model allowlists.
-- LLM factory selection.
+- Settings parsing and fixed-model configuration.
+- Gemini LLM factory configuration.
+- Daily quota detection, pause, and reset behavior.
 - Supervisor plan validation.
 - URL canonicalization and source deduplication.
 - Chunk metadata preservation.
@@ -1088,7 +1078,7 @@ Required unit-test targets:
 - Maximum repair retry enforcement.
 - Job status transitions.
 
-Mock provider calls. Unit tests must not require paid API keys.
+Mock Gemini calls. Unit tests must not require a real API key.
 
 ### 17.2 Integration tests
 
@@ -1109,8 +1099,9 @@ Test this sequence:
 
 Also test:
 
-- Invalid provider/model.
-- Missing provider key.
+- Missing Gemini key.
+- Daily quota exhausted.
+- Temporary per-minute rate limit.
 - Search failure.
 - One researcher failure.
 - Verification repair occurs at most once.
@@ -1184,15 +1175,16 @@ Do not fabricate benchmark values. Run the evaluation and publish only measured 
 
 Exit condition: frontend, backend, and database run locally.
 
-### Day 2 - Model providers
+### Day 2 - Gemini model integration
 
 - Add LangChain model factory.
-- Add OpenAI and Gemini integrations.
-- Add configuration/model endpoint.
+- Add the Gemini 3.5 Flash-Lite integration.
+- Add the configuration/model-status endpoint.
+- Add the daily free-quota circuit breaker.
 - Implement one structured-output smoke endpoint or internal test.
-- Add mocked provider tests.
+- Add mocked Gemini and quota-guard tests.
 
-Exit condition: the same application interface successfully selects either provider.
+Exit condition: the application reports Gemini setup/quota status and can make one guarded model call.
 
 ### Day 3 - Search and retrieval
 
@@ -1230,7 +1222,7 @@ Exit condition: API produces a persisted cited report end to end.
 ### Day 6 - Frontend
 
 - Build research form.
-- Build provider/model selection.
+- Build the polished research-question and source-limit form.
 - Build polling and agent-progress cards.
 - Build report Markdown renderer.
 - Build citation/source panel.
@@ -1279,7 +1271,8 @@ Do not introduce major new features during the buffer.
 The project is complete only when all of the following are true:
 
 - A user can submit a research question from the browser.
-- The user can select OpenAI or Gemini.
+- The backend safely rejects runs when Gemini is not configured or unavailable without exposing setup details.
+- A daily-quota response pauses further model calls until the next Google reset and produces a normal user-facing limit message.
 - The supervisor creates exactly three assignments.
 - Three researcher agents run independently and their progress is visible.
 - Researchers collect and persist real web sources.
@@ -1358,7 +1351,7 @@ Create `LIMITATIONS.md` covering:
 
 - Non-durable background tasks.
 - Search-provider dependence.
-- LLM/provider behavioral differences.
+- Gemini model and free-tier availability changes.
 - Imperfect citation verification.
 - Potential source bias and stale web information.
 - No authentication or tenant isolation.
@@ -1375,7 +1368,7 @@ Only use measured numbers from the finished project.
 *Python, FastAPI, LangChain, LangGraph, PostgreSQL, pgvector, Next.js, Docker*
 
 - Built a multi-agent research platform where a supervisor delegates work to three parallel research agents before writer and citation-verifier agents produce evidence-grounded reports.
-- Implemented runtime switching between OpenAI and Gemini through a shared LangChain model interface, with structured outputs, bounded retries, token tracking, and provider-specific tests.
+- Integrated Gemini 3.5 Flash-Lite through LangChain with structured outputs, bounded retries, token tracking, and a free-quota circuit breaker that prevents paid fallback.
 - Evaluated the system across **[N] research tasks**, achieving **[measured citation-validity rate]**, **[measured supported-claim rate]**, and **[measured median completion time]**.
 - Deployed a FastAPI and PostgreSQL/pgvector backend with a Next.js frontend, Docker-based local development, automated tests, and CI validation.
 
@@ -1390,10 +1383,10 @@ Never claim production users, uptime, latency, or percentage improvements that w
 3. Use current stable compatible packages and commit lockfiles.
 4. Work vertically: make one small end-to-end flow work before adding polish.
 5. Use migrations for database changes.
-6. Keep provider SDK details inside the LLM factory.
+6. Keep Google SDK details inside the LLM factory.
 7. Use structured Pydantic outputs for every agent boundary.
 8. Use deterministic checks wherever possible instead of asking an LLM to validate syntax or IDs.
-9. Mock paid external services in automated tests.
+9. Mock external model and search services in automated tests.
 10. If API credentials are unavailable, complete the implementation with fakes and provide explicit live-smoke-test instructions.
 11. Do not fabricate evaluation results.
 12. Do not add features from the non-goals list unless every acceptance criterion is complete and the user explicitly requests expansion.
@@ -1434,7 +1427,7 @@ Total accepted sources per job:        user limit, maximum 15
 Verification repair cycles:            maximum 1
 Overall job runtime:                    default maximum 300 seconds
 LLM retries per call:                   default maximum 2
-Chat-model provider per run:            exactly 1
+Chat model per run:                     gemini-3.5-flash-lite only
 Search providers in MVP:               exactly 1
 Embedding models in one vector index:   exactly 1
 ```
@@ -1449,7 +1442,7 @@ The purpose of these limits is to control cost, ensure termination, simplify deb
 - Public Next.js frontend.
 - Public FastAPI backend.
 - Managed PostgreSQL/pgvector database.
-- Working OpenAI/Gemini provider selection.
+- Working Gemini 3.5 Flash-Lite integration and quota protection.
 - Multi-agent LangGraph workflow.
 - Citation-grounded reports.
 - Automated tests.

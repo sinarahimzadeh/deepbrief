@@ -8,16 +8,19 @@ The implementation scope and engineering plan are documented in [DEEPBRIEF_IMPLE
 
 - Python 3.13 and FastAPI
 - LangChain and LangGraph
-- OpenAI and Google Gemini
+- Google Gemini 3.5 Flash-Lite
 - PostgreSQL and pgvector
 - Next.js, React, and TypeScript
 
 ## Current milestone
 
-The first vertical slice is working:
+The Gemini configuration slice is working:
 
 - `GET /api/v1/health` is available from FastAPI.
-- The Next.js home page checks the backend connection in the browser.
+- `GET /api/v1/config/models` exposes the fixed Gemini model and quota status without secrets.
+- One LangChain factory creates Gemini 3.5 Flash-Lite chat models.
+- A quota guard pauses model calls after Google reports the daily free limit.
+- The Next.js home page presents the research question and source controls without exposing backend setup details.
 - Backend tests and linting pass.
 - The frontend production build passes.
 
@@ -42,6 +45,10 @@ pnpm dev
 ```
 
 Open `http://localhost:3000`. FastAPI documentation is available at `http://localhost:8000/docs`.
+
+The Gemini API key is optional during setup. To enable model calls, copy
+`backend/.env.example` to `backend/.env` and add `GOOGLE_API_KEY`. The `.env`
+file is ignored by Git. DeepBrief has no OpenAI integration or paid fallback.
 
 ## Verify
 
