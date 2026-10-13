@@ -12,4 +12,47 @@ The implementation scope and engineering plan are documented in [DEEPBRIEF_IMPLE
 - PostgreSQL and pgvector
 - Next.js, React, and TypeScript
 
-Development setup and run instructions will be added with the first application milestone.
+## Current milestone
+
+The first vertical slice is working:
+
+- `GET /api/v1/health` is available from FastAPI.
+- The Next.js home page checks the backend connection in the browser.
+- Backend tests and linting pass.
+- The frontend production build passes.
+
+## Run locally
+
+Open two PowerShell terminals from the repository root.
+
+Terminal 1:
+
+```powershell
+cd backend
+uv sync
+uv run fastapi dev app/main.py
+```
+
+Terminal 2:
+
+```powershell
+cd frontend
+pnpm install
+pnpm dev
+```
+
+Open `http://localhost:3000`. FastAPI documentation is available at `http://localhost:8000/docs`.
+
+## Verify
+
+```powershell
+cd backend
+uv run ruff check .
+uv run pytest
+```
+
+```powershell
+cd frontend
+pnpm lint
+pnpm build
+```
