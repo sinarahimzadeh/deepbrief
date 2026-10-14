@@ -3,12 +3,15 @@ from threading import Lock
 from uuid import uuid4
 
 from app.schemas.research import (
+    ReportDraft,
     ResearchAgentProgress,
     ResearchAgentStatus,
     ResearcherResult,
     ResearchJobDetail,
     ResearchPlan,
     ResearchRequest,
+    VerificationResult,
+    WorkflowStepProgress,
 )
 
 
@@ -130,14 +133,61 @@ class ResearchJobStore:
                 deep=True,
             )
 
-    def complete_research(self, job_id: str) -> None:
+    def start_writer(self, job_id: str) -> None:
         job = self.get(job_id)
         if job is None or {result.index for result in job.researcher_results} != {1, 2, 3}:
             raise ValueError("A research job requires results from all three researchers")
         self._update(
             job_id,
+            status="running",
+            current_stage="writing",
+            writer=WorkflowStepProgress(
+                status="working",
+                progress_message="Combining the research into one report",
+            ),
+            error=None,
+        )
+
+    def finish_writer(self, job_id: str, report: ReportDraft) -> None:
+        self._update(
+            job_id,
+            report=report,
+            writer=WorkflowStepProgress(
+                status="completed",
+                progress_message="Final report written",
+            ),
+        )
+
+    def start_verifier(self, job_id: str) -> None:
+        self._update(
+            job_id,
+            status="running",
+            current_stage="verifying",
+            verifier=WorkflowStepProgress(
+                status="working",
+                progress_message="Checking important claims against their sources",
+            ),
+        )
+
+    def complete_research(self, job_id: str, verification: VerificationResult) -> None:
+        job = self.get(job_id)
+        if job is None or job.report is None:
+            raise ValueError("A research job requires a report before verification")
+
+        has_warnings = verification.overall_status == "completed_with_warnings"
+        self._update(
+            job_id,
             status="completed",
-            current_stage="research_complete",
+            current_stage="completed",
+            verification=verification,
+            verifier=WorkflowStepProgress(
+                status=("completed_with_warnings" if has_warnings else "completed"),
+                progress_message=(
+                    "Review finished with some cautions"
+                    if has_warnings
+                    else "Claims and citations checked"
+                ),
+            ),
             error=None,
         )
 
@@ -162,6 +212,22 @@ class ResearchJobStore:
                     "status": "failed",
                     "current_stage": "failed",
                     "agents": agents,
+                    "writer": (
+                        WorkflowStepProgress(
+                            status="failed",
+                            progress_message="Report generation stopped",
+                        )
+                        if job.writer.status == "working"
+                        else job.writer
+                    ),
+                    "verifier": (
+                        WorkflowStepProgress(
+                            status="failed",
+                            progress_message="Verification stopped",
+                        )
+                        if job.verifier.status == "working"
+                        else job.verifier
+                    ),
                     "error": message,
                     "updated_at": datetime.now(UTC),
                 },

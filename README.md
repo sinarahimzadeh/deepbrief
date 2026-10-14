@@ -14,7 +14,7 @@ The implementation scope and engineering plan are documented in [DEEPBRIEF_IMPLE
 
 ## Current milestone
 
-The supervisor and parallel-researcher slice is working:
+The complete in-memory research and verification flow is working:
 
 - `GET /api/v1/health` is available from FastAPI.
 - `GET /api/v1/config/models` exposes the fixed Gemini model and quota status without secrets.
@@ -26,9 +26,13 @@ The supervisor and parallel-researcher slice is working:
 - LangGraph runs the three assigned Gemini researchers in parallel.
 - Tavily keyless search supplies real web evidence without an account, API key, or paid fallback.
 - Every researcher finding is validated against the returned source IDs.
-- The Next.js research page shows live researcher states, findings, and clickable sources.
+- A dedicated writer turns the three research tracks into one structured report.
+- Deterministic checks reject missing or invented source references before verification.
+- A citation-verifier agent labels important claims as supported, weak, or unsupported.
+- The Next.js research page shows live workflow states, the final report, verification results,
+  and clickable inline citations.
 - Jobs are temporarily stored in memory until PostgreSQL is added.
-- The writer, final report, and verifier are the next workflow milestone.
+- PostgreSQL persistence, saved history, and pgvector retrieval are the next milestone.
 - Backend tests and linting pass.
 - The frontend production build passes.
 

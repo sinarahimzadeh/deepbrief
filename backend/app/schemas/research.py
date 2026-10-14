@@ -8,10 +8,19 @@ ResearchStage = Literal[
     "queued",
     "supervisor",
     "researchers",
-    "research_complete",
+    "writing",
+    "verifying",
+    "completed",
     "failed",
 ]
 ResearchAgentStatus = Literal["waiting", "searching", "analyzing", "completed", "failed"]
+WorkflowStepStatus = Literal[
+    "waiting",
+    "working",
+    "completed",
+    "completed_with_warnings",
+    "failed",
+]
 
 
 class ResearchRequest(BaseModel):
@@ -96,6 +105,40 @@ class ResearcherResult(BaseModel):
     sources: list[ResearchSource] = Field(min_length=1, max_length=5)
 
 
+class ReportSection(BaseModel):
+    heading: str = Field(min_length=3, max_length=120)
+    content: str = Field(min_length=40, max_length=5000)
+
+
+class ReportDraft(BaseModel):
+    title: str = Field(min_length=5, max_length=160)
+    executive_summary: str = Field(min_length=50, max_length=2000)
+    sections: list[ReportSection] = Field(min_length=2, max_length=6)
+    conclusion: str = Field(min_length=40, max_length=2000)
+
+
+ClaimSupport = Literal["supported", "weak", "unsupported"]
+
+
+class ClaimVerification(BaseModel):
+    claim: str = Field(min_length=10, max_length=1000)
+    source_keys: list[str] = Field(min_length=1, max_length=5)
+    status: ClaimSupport
+    explanation: str = Field(min_length=10, max_length=1000)
+
+
+class VerificationResult(BaseModel):
+    overall_status: Literal["passed", "completed_with_warnings"]
+    summary: str = Field(min_length=20, max_length=1000)
+    claims: list[ClaimVerification] = Field(min_length=1, max_length=20)
+    warnings: list[str] = Field(default_factory=list, max_length=10)
+
+
+class WorkflowStepProgress(BaseModel):
+    status: WorkflowStepStatus = "waiting"
+    progress_message: str
+
+
 class ResearchAgentProgress(BaseModel):
     index: int = Field(ge=1, le=3)
     title: str = Field(min_length=3, max_length=100)
@@ -119,6 +162,18 @@ class ResearchJobDetail(BaseModel):
     assignments: list[ResearchAssignment] = Field(default_factory=list)
     agents: list[ResearchAgentProgress] = Field(default_factory=list)
     researcher_results: list[ResearcherResult] = Field(default_factory=list)
+    writer: WorkflowStepProgress = Field(
+        default_factory=lambda: WorkflowStepProgress(
+            progress_message="Waiting for the researchers"
+        )
+    )
+    verifier: WorkflowStepProgress = Field(
+        default_factory=lambda: WorkflowStepProgress(
+            progress_message="Waiting for the report"
+        )
+    )
+    report: ReportDraft | None = None
+    verification: VerificationResult | None = None
     error: str | None = None
     created_at: datetime
     updated_at: datetime

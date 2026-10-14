@@ -15,7 +15,13 @@ Current research endpoints:
 
 - `POST /api/v1/research` creates a job and starts the LangGraph workflow.
 - `GET /api/v1/research/{id}` returns the supervisor plan, three researcher
-  progress records, evidence-grounded findings, and clickable source URLs.
+  progress records, evidence-grounded findings, the final cited report, citation
+  verification results, and clickable source URLs.
+
+After the parallel researchers finish, a writer node produces one structured
+report. A verifier node then checks important claims against the collected
+source snippets. Application code also rejects missing and invented source IDs
+before the semantic verification call.
 
 Jobs currently live in memory and are cleared when FastAPI restarts. PostgreSQL
 persistence is a later milestone.

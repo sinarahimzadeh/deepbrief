@@ -3,12 +3,16 @@ import asyncio
 import pytest
 
 from app.schemas.research import (
+    ClaimVerification,
+    ReportDraft,
+    ReportSection,
     ResearchAssignment,
     ResearcherResult,
     ResearchFinding,
     ResearchPlan,
     ResearchRequest,
     ResearchSource,
+    VerificationResult,
 )
 from app.services import research_workflow
 from app.services.research_jobs import research_job_store
@@ -26,6 +30,41 @@ def workflow_plan() -> ResearchPlan:
             )
             for index in range(1, 4)
         ]
+    )
+
+
+def workflow_report() -> ReportDraft:
+    return ReportDraft(
+        title="A deterministic research report",
+        executive_summary=(
+            "The evidence provides a deterministic summary for this workflow test [R1S1]."
+        ),
+        sections=[
+            ReportSection(
+                heading="First finding",
+                content="The first test source supports this report section [R1S1].",
+            ),
+            ReportSection(
+                heading="Second finding",
+                content="The second test source supports this report section [R2S1].",
+            ),
+        ],
+        conclusion="The collected evidence supports the deterministic conclusion [R3S1].",
+    )
+
+
+def workflow_verification() -> VerificationResult:
+    return VerificationResult(
+        overall_status="passed",
+        summary="The checked claims are supported by their cited test sources.",
+        claims=[
+            ClaimVerification(
+                claim="The first test source supports this report section.",
+                source_keys=["R1S1"],
+                status="supported",
+                explanation="The supplied test snippet directly supports the claim.",
+            )
+        ],
     )
 
 
@@ -78,9 +117,27 @@ def test_langgraph_runs_three_researchers_in_parallel(
             sources=sources,
         )
 
+    async def fake_report(
+        question: str,
+        results: list[ResearcherResult],
+    ) -> ReportDraft:
+        assert question
+        assert len(results) == 3
+        return workflow_report()
+
+    async def fake_verification(
+        report: ReportDraft,
+        results: list[ResearcherResult],
+    ) -> VerificationResult:
+        assert report.title
+        assert len(results) == 3
+        return workflow_verification()
+
     monkeypatch.setattr(research_workflow, "create_research_plan", fake_plan)
     monkeypatch.setattr(research_workflow, "collect_sources", fake_collect_sources)
     monkeypatch.setattr(research_workflow, "synthesize_research", fake_synthesis)
+    monkeypatch.setattr(research_workflow, "compose_report", fake_report)
+    monkeypatch.setattr(research_workflow, "verify_report", fake_verification)
 
     research_job_store.reset()
     job = research_job_store.create(
@@ -91,11 +148,61 @@ def test_langgraph_runs_three_researchers_in_parallel(
         completed = research_job_store.get(job.id)
         assert completed is not None
         assert completed.status == "completed"
-        assert completed.current_stage == "research_complete"
+        assert completed.current_stage == "completed"
         assert started == {1, 2, 3}
         assert len(completed.researcher_results) == 3
+        assert completed.report is not None
+        assert completed.verification is not None
     finally:
         research_job_store.reset()
+
+
+def test_report_citations_reject_unknown_source_keys() -> None:
+    report = workflow_report().model_copy(
+        update={
+            "conclusion": "This conclusion cites a source that does not exist [R3S5]."
+        }
+    )
+
+    with pytest.raises(ValueError, match="invalid source reference"):
+        research_workflow.validate_report_citations(
+            report,
+            {"R1S1", "R2S1", "R3S1"},
+        )
+
+
+def test_report_citations_accept_grouped_source_keys() -> None:
+    report = workflow_report().model_copy(
+        update={
+            "conclusion": "Both test sources support the final conclusion [R2S1, R3S1]."
+        }
+    )
+
+    research_workflow.validate_report_citations(
+        report,
+        {"R1S1", "R2S1", "R3S1"},
+    )
+
+
+def test_verification_status_is_derived_from_claim_support() -> None:
+    verification = workflow_verification().model_copy(
+        update={
+            "overall_status": "passed",
+            "claims": [
+                ClaimVerification(
+                    claim="This test claim has only partial support.",
+                    source_keys=["R1S1"],
+                    status="weak",
+                    explanation="The source supports only part of the claim.",
+                )
+            ],
+        }
+    )
+
+    normalized = research_workflow.normalize_verification(verification, {"R1S1"})
+
+    assert normalized.overall_status == "completed_with_warnings"
+    assert normalized.warnings
 
 
 def test_search_limit_failure_is_safe_for_the_job(

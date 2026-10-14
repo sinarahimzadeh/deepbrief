@@ -8,11 +8,15 @@ from app.api.routes import research as research_route
 from app.core.config import Settings, get_settings
 from app.main import app
 from app.schemas.research import (
+    ClaimVerification,
+    ReportDraft,
+    ReportSection,
     ResearchAssignment,
     ResearcherResult,
     ResearchFinding,
     ResearchPlan,
     ResearchSource,
+    VerificationResult,
 )
 from app.services.quota_guard import gemini_quota_guard
 from app.services.research_jobs import research_job_store
@@ -69,6 +73,39 @@ def sample_result(assignment: ResearchAssignment) -> ResearcherResult:
     )
 
 
+def sample_report() -> ReportDraft:
+    return ReportDraft(
+        title="A deterministic API research report",
+        executive_summary="The test evidence supports this API report summary [R1S1].",
+        sections=[
+            ReportSection(
+                heading="Market evidence",
+                content="The market finding is supported by the first source [R1S1].",
+            ),
+            ReportSection(
+                heading="Technical evidence",
+                content="The technical finding is supported by the second source [R2S1].",
+            ),
+        ],
+        conclusion="The test evidence supports the final API conclusion [R3S1].",
+    )
+
+
+def sample_verification() -> VerificationResult:
+    return VerificationResult(
+        overall_status="passed",
+        summary="The important report claims are supported by their citations.",
+        claims=[
+            ClaimVerification(
+                claim="The market finding is supported by the first source.",
+                source_keys=["R1S1"],
+                status="supported",
+                explanation="The source directly supports the test claim.",
+            )
+        ],
+    )
+
+
 def test_research_plan_requires_exactly_three_assignments() -> None:
     with pytest.raises(ValidationError):
         ResearchPlan(assignments=sample_plan().assignments[:2])
@@ -92,7 +129,10 @@ def test_research_job_creates_exactly_three_assignments(
         research_job_store.start_researchers(job_id, plan)
         for assignment in plan.assignments:
             research_job_store.add_researcher_result(job_id, sample_result(assignment))
-        research_job_store.complete_research(job_id)
+        research_job_store.start_writer(job_id)
+        research_job_store.finish_writer(job_id, sample_report())
+        research_job_store.start_verifier(job_id)
+        research_job_store.complete_research(job_id, sample_verification())
 
     monkeypatch.setattr(research_route, "run_research_job", fake_research_job)
 
@@ -113,11 +153,13 @@ def test_research_job_creates_exactly_three_assignments(
         assert job.status_code == 200
         body = job.json()
         assert body["status"] == "completed"
-        assert body["current_stage"] == "research_complete"
+        assert body["current_stage"] == "completed"
         assert len(body["assignments"]) == 3
         assert {assignment["index"] for assignment in body["assignments"]} == {1, 2, 3}
         assert len(body["researcher_results"]) == 3
         assert all(agent["status"] == "completed" for agent in body["agents"])
+        assert body["report"]["title"] == "A deterministic API research report"
+        assert body["verification"]["overall_status"] == "passed"
 
     try:
         asyncio.run(make_request())
