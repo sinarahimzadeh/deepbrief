@@ -999,7 +999,8 @@ API_PREFIX=/api/v1
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/deepbrief
 
 GOOGLE_API_KEY=
-TAVILY_API_KEY=
+# Tavily Search uses its free keyless request header during local MVP development.
+# Add a Tavily API key only as an explicit future deployment decision.
 
 GEMINI_MODEL=gemini-3.5-flash-lite
 

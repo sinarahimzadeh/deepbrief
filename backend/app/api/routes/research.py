@@ -6,7 +6,7 @@ from app.core.config import Settings, get_settings
 from app.schemas.research import ResearchJobCreated, ResearchJobDetail, ResearchRequest
 from app.services.quota_guard import gemini_quota_guard
 from app.services.research_jobs import research_job_store
-from app.services.research_workflow import run_supervisor_job
+from app.services.research_workflow import run_research_job
 
 router = APIRouter(prefix="/research", tags=["research"])
 
@@ -30,7 +30,7 @@ async def create_research_job(
         )
 
     job = research_job_store.create(request)
-    background_tasks.add_task(run_supervisor_job, job.id)
+    background_tasks.add_task(run_research_job, job.id)
     return ResearchJobCreated(
         id=job.id,
         status=job.status,

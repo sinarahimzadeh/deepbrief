@@ -14,17 +14,21 @@ The implementation scope and engineering plan are documented in [DEEPBRIEF_IMPLE
 
 ## Current milestone
 
-The first real supervisor slice is working:
+The supervisor and parallel-researcher slice is working:
 
 - `GET /api/v1/health` is available from FastAPI.
 - `GET /api/v1/config/models` exposes the fixed Gemini model and quota status without secrets.
 - `POST /api/v1/research` accepts and validates a research question.
-- `GET /api/v1/research/{id}` returns job progress and the completed plan.
+- `GET /api/v1/research/{id}` returns live agent progress, findings, and sources.
 - One LangChain factory creates Gemini 3.5 Flash-Lite chat models.
 - A quota guard pauses model calls after Google reports the daily free limit.
 - The Gemini supervisor produces exactly three validated, non-overlapping research assignments.
-- The Next.js form submits a real job and displays the three-track supervisor plan.
+- LangGraph runs the three assigned Gemini researchers in parallel.
+- Tavily keyless search supplies real web evidence without an account, API key, or paid fallback.
+- Every researcher finding is validated against the returned source IDs.
+- The Next.js research page shows live researcher states, findings, and clickable sources.
 - Jobs are temporarily stored in memory until PostgreSQL is added.
+- The writer, final report, and verifier are the next workflow milestone.
 - Backend tests and linting pass.
 - The frontend production build passes.
 
@@ -53,6 +57,9 @@ Open `http://localhost:3000`. FastAPI documentation is available at `http://loca
 The Gemini API key is optional during setup. To enable model calls, copy
 `backend/.env.example` to `backend/.env` and add `GOOGLE_API_KEY`. The `.env`
 file is ignored by Git. DeepBrief has no OpenAI integration or paid fallback.
+
+Web search uses Tavily's free keyless mode. It requires no additional key and
+stops with a normal error if Tavily's keyless rate limit is reached.
 
 ## Verify
 

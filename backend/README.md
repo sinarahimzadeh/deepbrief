@@ -13,8 +13,9 @@ The API is available at `http://localhost:8000` and the interactive documentatio
 
 Current research endpoints:
 
-- `POST /api/v1/research` creates a job and starts the Gemini supervisor.
-- `GET /api/v1/research/{id}` returns status and exactly three planned assignments.
+- `POST /api/v1/research` creates a job and starts the LangGraph workflow.
+- `GET /api/v1/research/{id}` returns the supervisor plan, three researcher
+  progress records, evidence-grounded findings, and clickable source URLs.
 
 Jobs currently live in memory and are cleared when FastAPI restarts. PostgreSQL
 persistence is a later milestone.
@@ -28,4 +29,11 @@ uses only `gemini-3.5-flash-lite`; it has no OpenAI or paid-model fallback.
 the API key. All model calls must go through `invoke_chat_model`, which pauses
 calls until the next midnight-Pacific reset after Google reports that the daily
 free quota has been exhausted.
+
+## Web search
+
+The three researcher nodes use Tavily's free keyless Search API. No Tavily key,
+account, or payment method is required. Searches are bounded to four queries and
+five accepted sources per researcher. When the keyless rate limit is reached,
+the job stops without switching to a paid service.
 

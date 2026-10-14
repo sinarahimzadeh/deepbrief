@@ -7,7 +7,13 @@ from pydantic import ValidationError
 from app.api.routes import research as research_route
 from app.core.config import Settings, get_settings
 from app.main import app
-from app.schemas.research import ResearchAssignment, ResearchPlan
+from app.schemas.research import (
+    ResearchAssignment,
+    ResearcherResult,
+    ResearchFinding,
+    ResearchPlan,
+    ResearchSource,
+)
 from app.services.quota_guard import gemini_quota_guard
 from app.services.research_jobs import research_job_store
 
@@ -37,6 +43,32 @@ def sample_plan() -> ResearchPlan:
     )
 
 
+def sample_result(assignment: ResearchAssignment) -> ResearcherResult:
+    source_key = f"R{assignment.index}S1"
+    return ResearcherResult(
+        index=assignment.index,
+        title=assignment.title,
+        summary="The available evidence supports a concise test research summary.",
+        findings=[
+            ResearchFinding(
+                statement="The test evidence supports this researcher finding.",
+                source_keys=[source_key],
+            )
+        ],
+        sources=[
+            ResearchSource(
+                source_key=source_key,
+                title="Example evidence",
+                url=f"https://example.com/source-{assignment.index}",
+                domain="example.com",
+                snippet="A useful evidence snippet for the deterministic API test.",
+                query=assignment.search_queries[0],
+                score=0.9,
+            )
+        ],
+    )
+
+
 def test_research_plan_requires_exactly_three_assignments() -> None:
     with pytest.raises(ValidationError):
         ResearchPlan(assignments=sample_plan().assignments[:2])
@@ -54,11 +86,15 @@ def test_research_job_creates_exactly_three_assignments(
     research_job_store.reset()
     gemini_quota_guard.reset()
 
-    async def fake_supervisor(job_id: str) -> None:
+    async def fake_research_job(job_id: str) -> None:
         research_job_store.mark_running(job_id)
-        research_job_store.complete_plan(job_id, sample_plan())
+        plan = sample_plan()
+        research_job_store.start_researchers(job_id, plan)
+        for assignment in plan.assignments:
+            research_job_store.add_researcher_result(job_id, sample_result(assignment))
+        research_job_store.complete_research(job_id)
 
-    monkeypatch.setattr(research_route, "run_supervisor_job", fake_supervisor)
+    monkeypatch.setattr(research_route, "run_research_job", fake_research_job)
 
     async def make_request() -> None:
         transport = ASGITransport(app=app)
@@ -77,9 +113,11 @@ def test_research_job_creates_exactly_three_assignments(
         assert job.status_code == 200
         body = job.json()
         assert body["status"] == "completed"
-        assert body["current_stage"] == "plan_ready"
+        assert body["current_stage"] == "research_complete"
         assert len(body["assignments"]) == 3
         assert {assignment["index"] for assignment in body["assignments"]} == {1, 2, 3}
+        assert len(body["researcher_results"]) == 3
+        assert all(agent["status"] == "completed" for agent in body["agents"])
 
     try:
         asyncio.run(make_request())

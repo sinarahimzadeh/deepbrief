@@ -4,7 +4,14 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 ResearchJobStatus = Literal["queued", "running", "completed", "failed"]
-ResearchStage = Literal["queued", "supervisor", "plan_ready", "failed"]
+ResearchStage = Literal[
+    "queued",
+    "supervisor",
+    "researchers",
+    "research_complete",
+    "failed",
+]
+ResearchAgentStatus = Literal["waiting", "searching", "analyzing", "completed", "failed"]
 
 
 class ResearchRequest(BaseModel):
@@ -55,6 +62,48 @@ class ResearchPlan(BaseModel):
         return self
 
 
+class ResearchSource(BaseModel):
+    source_key: str = Field(pattern=r"^R[1-3]S[1-5]$")
+    title: str = Field(min_length=1, max_length=300)
+    url: str = Field(min_length=8, max_length=2000)
+    domain: str = Field(min_length=1, max_length=255)
+    snippet: str = Field(min_length=1, max_length=4000)
+    query: str = Field(min_length=1, max_length=300)
+    score: float | None = Field(default=None, ge=0, le=1)
+    published_date: str | None = None
+
+
+class ResearchFinding(BaseModel):
+    statement: str = Field(min_length=10, max_length=1000)
+    source_keys: list[str] = Field(min_length=1, max_length=5)
+
+    @field_validator("statement")
+    @classmethod
+    def normalize_statement(cls, value: str) -> str:
+        return " ".join(value.split())
+
+
+class ResearcherSynthesis(BaseModel):
+    summary: str = Field(min_length=20, max_length=1500)
+    findings: list[ResearchFinding] = Field(min_length=1, max_length=8)
+
+
+class ResearcherResult(BaseModel):
+    index: int = Field(ge=1, le=3)
+    title: str = Field(min_length=3, max_length=100)
+    summary: str = Field(min_length=20, max_length=1500)
+    findings: list[ResearchFinding] = Field(min_length=1, max_length=8)
+    sources: list[ResearchSource] = Field(min_length=1, max_length=5)
+
+
+class ResearchAgentProgress(BaseModel):
+    index: int = Field(ge=1, le=3)
+    title: str = Field(min_length=3, max_length=100)
+    status: ResearchAgentStatus = "waiting"
+    progress_message: str = "Waiting for the supervisor"
+    sources_found: int = Field(default=0, ge=0, le=5)
+
+
 class ResearchJobCreated(BaseModel):
     id: str
     status: ResearchJobStatus
@@ -68,6 +117,8 @@ class ResearchJobDetail(BaseModel):
     status: ResearchJobStatus
     current_stage: ResearchStage
     assignments: list[ResearchAssignment] = Field(default_factory=list)
+    agents: list[ResearchAgentProgress] = Field(default_factory=list)
+    researcher_results: list[ResearcherResult] = Field(default_factory=list)
     error: str | None = None
     created_at: datetime
     updated_at: datetime
